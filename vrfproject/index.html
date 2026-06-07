@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>基于EC-VRF的概率性服务公平性验证</title>
+    <style>
+        :root {
+            --pki-color: #4A6CF7;
+            --pki-light: #EEF1FE;
+            --provider-color: #10B981;
+            --provider-light: #ECFDF5;
+            --user-color: #F59E0B;
+            --user-light: #FFFBEB;
+            --bg: #F8FAFC;
+            --card-bg: #FFFFFF;
+            --text: #1E293B;
+            --text-secondary: #64748B;
+            --border: #E2E8F0;
+            --shadow: 0 1px 3px rgba(0,0,0,0.06);
+            --radius: 12px;
+            --radius-sm: 8px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: #1E293B;
+            color: white;
+            padding: 16px 32px;
+            text-align: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+            .header h1 {
+                font-size: 1.3rem;
+                font-weight: 700;
+            }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px 20px 40px;
+        }
+
+        /* Step Indicator */
+        .step-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0;
+            margin-bottom: 28px;
+        }
+
+        .step-dot {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.85rem;
+            background: white;
+            border: 2px solid var(--border);
+            color: var(--text-secondary);
+        }
+
+            .step-dot.active {
+                border-color: var(--pki-color);
+                background: var(--pki-light);
+                color: var(--pki-color);
+            }
+
+            .step-dot.done {
+                border-color: var(--provider-color);
+                background: var(--provider-light);
+                color: var(--provider-color);
+            }
+
+        .step-line {
+            width: 40px;
+            height: 2px;
+            background: var(--border);
+            margin: 0 -2px;
+        }
+
+            .step-line.done {
+                background: var(--provider-color);
+            }
+
+        .step-label {
+            font-size: 0.68rem;
+            color: var(--text-secondary);
+            text-align: center;
+            margin-top: 3px;
+            white-space: nowrap;
+        }
+
+        .step-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* Panels */
+        .panels-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 16px;
+        }
+
+        @media (max-width: 900px) {
+            .panels-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .panel-header {
+            padding: 14px 18px;
+            font-weight: 700;
+            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .panel-pki .panel-header {
+            background: var(--pki-light);
+            color: #3B4FB8;
+        }
+
+        .panel-provider .panel-header {
+            background: var(--provider-light);
+            color: #059669;
+        }
+
+        .panel-user .panel-header {
+            background: var(--user-light);
+            color: #D97706;
+        }
+
+        .panel-body {
+            padding: 16px 18px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            border: none;
+            transition: 0.2s;
+            font-family: inherit;
+        }
+
+            .btn:disabled {
+                opacity: 0.45;
+                cursor: not-allowed;
+                pointer-events: none;
+            }
+
+        .btn-pki {
+            background: var(--pki-color);
+            color: white;
+        }
+
+            .btn-pki:hover:not(:disabled) {
+                background: #3B4FB8;
+            }
+
+        .btn-provider {
+            background: var(--provider-color);
+            color: white;
+        }
+
+            .btn-provider:hover:not(:disabled) {
+                background: #059669;
+            }
+
+        .btn-user {
+            background: var(--user-color);
+            color: #1E293B;
+        }
+
+            .btn-user:hover:not(:disabled) {
+                background: #D97706;
+                color: white;
+            }
+
+        .btn-verify {
+            background: #8B5CF6;
+            color: white;
+        }
+
+            .btn-verify:hover:not(:disabled) {
+                background: #7C3AED;
+            }
+
+        .btn-check {
+            background: #06B6D4;
+            color: white;
+        }
+
+            .btn-check:hover:not(:disabled) {
+                background: #0891B2;
+            }
+
+        .btn-outline {
+            background: white;
+            border: 2px solid var(--border);
+            color: var(--text);
+        }
+
+            .btn-outline:hover:not(:disabled) {
+                border-color: #94A3B8;
+                background: #F8FAFC;
+            }
+
+        .btn-sm {
+            padding: 7px 12px;
+            font-size: 0.78rem;
+        }
+
+        /* Inputs */
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+            .input-group label {
+                font-weight: 600;
+                font-size: 0.78rem;
+                color: var(--text-secondary);
+            }
+
+        input[type="text"], input[type="number"] {
+            padding: 8px 12px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-family: inherit;
+            background: #FAFBFC;
+            color: var(--text);
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--pki-color);
+            background: white;
+        }
+
+        /* Info Box */
+        .info-box {
+            background: #F8FAFC;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 10px 12px;
+            font-size: 0.78rem;
+            word-break: break-all;
+            font-family: 'SF Mono', 'Consolas', monospace;
+            color: var(--text-secondary);
+            max-height: 200px;
+            overflow-y: auto;
+            line-height: 1.5;
+        }
+
+            .info-box .label {
+                font-weight: 700;
+                color: var(--text);
+                display: block;
+                margin-bottom: 3px;
+                font-family: inherit;
+                font-size: 0.72rem;
+                text-transform: uppercase;
+            }
+
+        /* Grade Badge */
+        .grade-badge {
+            display: inline-block;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 1rem;
+            letter-spacing: 0.05em;
+        }
+
+        .grade-A {
+            background: #ECFDF5;
+            color: #059669;
+            border: 2px solid #10B981;
+        }
+
+        .grade-B {
+            background: #EFF6FF;
+            color: #2563EB;
+            border: 2px solid #3B82F6;
+        }
+
+        .grade-C {
+            background: #FFFBEB;
+            color: #D97706;
+            border: 2px solid #F59E0B;
+        }
+
+        .grade-D {
+            background: #FEF2F2;
+            color: #DC2626;
+            border: 2px solid #EF4444;
+        }
+
+        /* Status */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 10px;
+            border-radius: 16px;
+            font-size: 0.72rem;
+            font-weight: 600;
+        }
+
+        .status-ok {
+            background: #ECFDF5;
+            color: #059669;
+        }
+
+        .status-pending {
+            background: #FEF3C7;
+            color: #D97706;
+        }
+
+        .status-error {
+            background: #FEF2F2;
+            color: #DC2626;
+        }
+
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+            .status-dot.ok {
+                background: #10B981;
+            }
+
+            .status-dot.pending {
+                background: #F59E0B;
+                animation: blink 1s infinite;
+            }
+
+            .status-dot.error {
+                background: #EF4444;
+            }
+
+        @keyframes blink {
+            50% {
+                opacity: 0.3;
+            }
+        }
+
+        /* Verification Group */
+        .verify-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 4px;
+        }
+
+        .verify-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .verify-divider {
+            border-top: 1px dashed var(--border);
+            margin: 4px 0;
+        }
+
+        /* Toast */
+        .toast-container {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            z-index: 999;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: none;
+        }
+
+        .toast {
+            background: white;
+            border-radius: 10px;
+            padding: 12px 18px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+            font-weight: 600;
+            font-size: 0.82rem;
+            pointer-events: auto;
+            animation: slideIn 0.3s ease-out;
+            max-width: 360px;
+            border-left: 4px solid var(--pki-color);
+        }
+
+            .toast.success {
+                border-left-color: #10B981;
+            }
+
+            .toast.error {
+                border-left-color: #EF4444;
+            }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(120%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+
+            to {
+                transform: translateX(120%);
+                opacity: 0;
+            }
+        }
+
+        ::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #CBD5E1;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>🔐 基于EC-VRF的概率性服务公平性验证</h1>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <div class="container">
+        <!-- Step Indicator -->
+        <div class="step-indicator">
+            <div class="step-group"><div class="step-dot active" id="stepDot1">1</div><span class="step-label">密钥分发</span></div>
+            <div class="step-line" id="stepLine1"></div>
+            <div class="step-group"><div class="step-dot" id="stepDot2">2</div><span class="step-label">抽取</span></div>
+            <div class="step-line" id="stepLine2"></div>
+            <div class="step-group"><div class="step-dot" id="stepDot3">3</div><span class="step-label">质疑</span></div>
+            <div class="step-line" id="stepLine3"></div>
+            <div class="step-group"><div class="step-dot" id="stepDot4">4</div><span class="step-label">验证</span></div>
+        </div>
+
+        <!-- Panels -->
+        <div class="panels-grid">
+            <!-- PKI -->
+            <div class="panel panel-pki">
+                <div class="panel-header">🏛️ PKI / 可信第三方</div>
+                <div class="panel-body">
+                    <button class="btn btn-pki" id="btnInitPKI" onclick="initPKI()">🔑 初始化密钥分发</button>
+                    <div class="info-box" id="pkiStatus">等待初始化...</div>
+                    <div>
+                        <strong>σ<sub>pk</sub>：</strong>
+                        <span class="status-badge status-pending" id="pkiSigmaBadge"><span class="status-dot pending"></span> 未签发</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Provider -->
+            <div class="panel panel-provider">
+                <div class="panel-header">🏢 服务商</div>
+                <div class="panel-body">
+                    <div class="info-box" id="providerKeyInfo">等待密钥分发...</div>
+                    <div class="info-box" id="providerResult">等待抽取...</div>
+                </div>
+            </div>
+
+            <!-- User -->
+            <div class="panel panel-user">
+                <div class="panel-header">👤 用户</div>
+                <div class="panel-body">
+                    <div class="input-group">
+                        <label>用户 ID</label>
+                        <input type="text" id="inputUserID" value="6553625" placeholder="输入用户标识">
+                    </div>
+                    <div class="input-group">
+                        <label>序列号 sd</label>
+                        <input type="number" id="inputSerial" value="37" min="1">
+                    </div>
+                    <button class="btn btn-user" id="btnRequest" onclick="requestEvaluation()" disabled>📤 请求抽取</button>
+                    <button class="btn btn-user" id="btnChallenge" onclick="doChallenge()" disabled style="background:#F97316;color:white;">📜 质疑并获取证明</button>
+
+                    <!-- 验证按钮区域 -->
+                    <div class="verify-divider"></div>
+                    <div style="font-size:0.75rem;font-weight:700;color:var(--text-secondary);">🔍 验证操作</div>
+                    <div class="verify-group">
+                        <div class="verify-row">
+                            <button class="btn btn-verify btn-sm" id="btnSigmaVerify" onclick="doSigmaVerify()" disabled>🏛️ σ<sub>pk</sub> 求证</button>
+                            <span class="status-badge status-pending" id="sigmaVerifyBadge"><span class="status-dot pending"></span> 未验证</span>
+                        </div>
+                        <div class="verify-row">
+                            <button class="btn btn-check btn-sm" id="btnServiceCheck" onclick="doServiceCheck()" disabled>📊 服务正确性验证</button>
+                            <span class="status-badge status-pending" id="serviceCheckBadge"><span class="status-dot pending"></span> 未检查</span>
+                        </div>
+                        <div class="verify-row">
+                            <button class="btn btn-outline btn-sm" id="btnVerify" onclick="doVerify()" disabled>🔐 完整VRF验证</button>
+                            <span class="status-badge status-pending" id="userVerifyBadge"><span class="status-dot pending"></span> 待验证</span>
+                        </div>
+                    </div>
+
+                    <div class="info-box" id="userResult">等待请求...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ──────────────────────────────────────
+        // 全局状态
+        // ──────────────────────────────────────
+        const API = 'http://127.0.0.1:5000/api';
+
+        // 等级映射区间（基于SHA-256哈希值的前4位十六进制）
+        const GRADE_THRESHOLDS = {
+            'A': { min: 0, max: 16383 },
+            'B': { min: 16384, max: 32767 },
+            'C': { min: 32768, max: 49151 },
+            'D': { min: 49152, max: 65535 }
+        };
+
+        function getGradeFromY(yHex) {
+            const val = parseInt(yHex.substring(0, 4), 16);
+            for (const [grade, range] of Object.entries(GRADE_THRESHOLDS)) {
+                if (val >= range.min && val <= range.max) return grade;
+            }
+            return 'D';
+        }
+
+        let state = {
+            step: 0,
+            pkiPublicKey: null,
+            vrfPublicKeyRaw: null,
+            sigmaPk: null,
+            proofId: null,
+            lastInputX: null,
+            lastOutputY: null,
+            lastGrade: null,
+            lastProofPi: null,
+            sigmaVerified: false,
+            serviceChecked: false,
+            vrfVerified: false,
+        };
+
+        // ──────────────────────────────────────
+        // Toast
+        // ──────────────────────────────────────
+        function showToast(msg, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = msg;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.animation = 'slideOut 0.3s ease-in forwards';
+                setTimeout(() => toast.remove(), 350);
+            }, 3000);
+        }
+
+        // ──────────────────────────────────────
+        // 步骤指示器
+        // ──────────────────────────────────────
+        function updateSteps(activeStep) {
+            for (let i = 1; i <= 4; i++) {
+                const dot = document.getElementById(`stepDot${i}`);
+                const line = i < 4 ? document.getElementById(`stepLine${i}`) : null;
+                dot.classList.remove('active', 'done');
+                if (line) line.classList.remove('done');
+                if (i < activeStep) { dot.classList.add('done'); if (line) line.classList.add('done'); }
+                else if (i === activeStep) dot.classList.add('active');
+            }
+            state.step = activeStep;
+        }
+
+        function updateButtons() {
+            document.getElementById('btnInitPKI').disabled = (state.step >= 1);
+            document.getElementById('btnRequest').disabled = (state.step < 1);
+            document.getElementById('btnChallenge').disabled = (state.step < 2 || !state.proofId);
+
+            // 三个验证按钮：质疑完成后即可使用
+            const canVerify = (state.step >= 3 && state.lastProofPi);
+            document.getElementById('btnSigmaVerify').disabled = !canVerify;
+            document.getElementById('btnServiceCheck').disabled = !canVerify;
+            document.getElementById('btnVerify').disabled = !canVerify;
+        }
+
+        // ──────────────────────────────────────
+        // 步骤1：PKI初始化
+        // ──────────────────────────────────────
+        async function initPKI() {
+            const btn = document.getElementById('btnInitPKI');
+            btn.disabled = true;
+            btn.textContent = '⏳ 生成中...';
+            showToast('PKI正在生成VRF密钥对...', 'info');
+
+            try {
+                const resp = await fetch(`${API}/init`, { method: 'POST' });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                if (!data.success) throw new Error(data.error || '初始化失败');
+
+                state.pkiPublicKey = data.pki_public_key;
+                state.vrfPublicKeyRaw = data.vrf_public_key_raw;
+                state.sigmaPk = data.sigma_pk;
+                state.step = 1;
+                state.sigmaVerified = false;
+                state.serviceChecked = false;
+                state.vrfVerified = false;
+
+                document.getElementById('pkiStatus').innerHTML = `
+                        <span class="label">✅ 密钥已生成</span>
+                        <span>pk: <code>${data.vrf_public_key_raw.substring(0, 30)}...</code></span><br>
+                        <span>σ<sub>pk</sub>: <code>${data.sigma_pk.substring(0, 30)}...</code></span>
+                    `;
+                document.getElementById('pkiSigmaBadge').innerHTML = '<span class="status-dot ok"></span> 已签发';
+                document.getElementById('providerKeyInfo').innerHTML = `
+                        <span class="label">📦 已接收密钥</span>
+                        <span>pk: <code>${data.vrf_public_key_raw.substring(0, 30)}...</code></span>
+                    `;
+
+                updateSteps(1);
+                updateButtons();
+                btn.textContent = '✅ 已完成';
+                showToast('✅ 密钥分发完成！', 'success');
+            } catch (err) {
+                showToast('❌ ' + err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = '🔑 重试';
+            }
+        }
+
+        // ──────────────────────────────────────
+        // 步骤2：用户请求抽取
+        // ──────────────────────────────────────
+        async function requestEvaluation() {
+            const uid = document.getElementById('inputUserID').value.trim();
+            const sd = document.getElementById('inputSerial').value;
+            if (!uid || !sd) { showToast('请填写完整信息', 'error'); return; }
+
+            const inputX = uid + '||' + sd;
+            state.lastInputX = inputX;
+
+            const btn = document.getElementById('btnRequest');
+            btn.disabled = true;
+            btn.textContent = '⏳ 计算中...';
+            document.getElementById('userResult').innerHTML = '⏳ 服务商计算中...';
+
+            // 重置验证状态
+            state.sigmaVerified = false;
+            state.serviceChecked = false;
+            state.vrfVerified = false;
+            resetAllVerifyBadges();
+
+            try {
+                const resp = await fetch(`${API}/evaluate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ input_x: inputX })
+                });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                if (!data.success) throw new Error(data.error);
+
+                state.proofId = data.proof_id;
+                state.lastOutputY = data.y;
+                state.lastProofPi = data.pi;
+                state.lastGrade = getGradeFromY(data.y);
+                state.step = 2;
+
+                document.getElementById('providerResult').innerHTML = `
+                        <span class="label">🎲 VRF已计算</span>
+                        <span>y: <code>${data.y.substring(0, 24)}...</code></span>
+                    `;
+                document.getElementById('userResult').innerHTML = `
+                        <span class="label">📬 抽取结果</span>
+                        <div style="margin:8px 0;">
+                            <span style="font-size:1.1rem;font-weight:700;">等级：</span>
+                            <span class="grade-badge grade-${state.lastGrade}">${state.lastGrade}</span>
+                        </div>
+                        <div style="margin-top:6px;">
+                            <span style="font-size:0.75rem;color:var(--text-secondary);">VRF输出 y:</span><br>
+                            <code style="font-size:0.7rem;word-break:break-all;">${data.y}</code>
+                        </div>
+                    `;
+
+                updateSteps(2);
+                updateButtons();
+                btn.textContent = '✅ 已抽取';
+                showToast(`✅ 抽取完成！等级：${state.lastGrade}`, 'success');
+            } catch (err) {
+                showToast('❌ ' + err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = '📤 重试';
+                document.getElementById('userResult').innerHTML = '<span style="color:#EF4444;">失败</span>';
+            }
+        }
+
+        // ──────────────────────────────────────
+        // 步骤3：质疑（获取证明）
+        // ──────────────────────────────────────
+        async function doChallenge() {
+            if (!state.proofId || !state.lastOutputY) {
+                showToast('请先完成抽取', 'error'); return;
+            }
+
+            const btn = document.getElementById('btnChallenge');
+            btn.disabled = true;
+            btn.textContent = '⏳ 获取中...';
+            showToast('用户质疑，服务商返回证明π...', 'info');
+
+            try {
+                const resp = await fetch(`${API}/challenge`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        proof_id: state.proofId,
+                        input_x: state.lastInputX,
+                        y: state.lastOutputY
+                    })
+                });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                if (!data.success) throw new Error(data.error);
+
+                state.lastProofPi = data.pi;
+                state.sigmaPk = data.sigma_pk || state.sigmaPk;
+                state.vrfPublicKeyRaw = data.vrf_public_key_raw || state.vrfPublicKeyRaw;
+                state.pkiPublicKey = data.pki_public_key || state.pkiPublicKey;
+                state.step = 3;
+
+                document.getElementById('providerResult').innerHTML = `
+                        <span class="label">📜 证明已返回</span>
+                        <span>π.m: <code>${data.pi.m.substring(0, 24)}...</code></span><br>
+                        <span>π.c: <code>${data.pi.c}</code></span><br>
+                        <span>π.z: <code>${data.pi.z.substring(0, 24)}...</code></span>
+                    `;
+                document.getElementById('userResult').innerHTML = `
+                        <span class="label">📦 已收到完整证明材料</span>
+                        <div style="margin:8px 0;">
+                            <span style="font-size:1.1rem;font-weight:700;">等级：</span>
+                            <span class="grade-badge grade-${state.lastGrade}">${state.lastGrade}</span>
+                        </div>
+                        <span style="font-size:0.72rem;">✅ 证明π (m,c,z) 已接收</span><br>
+                        <span style="font-size:0.72rem;">✅ 公钥pk 已接收</span><br>
+                        <span style="font-size:0.72rem;">✅ σ<sub>pk</sub> 已接收</span>
+                    `;
+
+                updateSteps(3);
+                updateButtons();
+                btn.textContent = '✅ 已获取';
+                showToast('✅ 证明已返回！可进行验证', 'success');
+            } catch (err) {
+                showToast('❌ ' + err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = '📜 重试';
+            }
+        }
+
+        // ──────────────────────────────────────
+        // 重置所有验证徽章
+        // ──────────────────────────────────────
+        function resetAllVerifyBadges() {
+            document.getElementById('sigmaVerifyBadge').innerHTML = '<span class="status-dot pending"></span> 未验证';
+            document.getElementById('sigmaVerifyBadge').className = 'status-badge status-pending';
+            document.getElementById('serviceCheckBadge').innerHTML = '<span class="status-dot pending"></span> 未检查';
+            document.getElementById('serviceCheckBadge').className = 'status-badge status-pending';
+            document.getElementById('userVerifyBadge').innerHTML = '<span class="status-dot pending"></span> 待验证';
+            document.getElementById('userVerifyBadge').className = 'status-badge status-pending';
+        }
+
+        // ──────────────────────────────────────
+        // 验证1：σ_pk 求证（独立）
+        // ──────────────────────────────────────
+        async function doSigmaVerify() {
+            if (!state.sigmaPk || !state.vrfPublicKeyRaw || !state.pkiPublicKey) {
+                showToast('缺少验证材料，请先完成质疑获取证明', 'error'); return;
+            }
+
+            const btn = document.getElementById('btnSigmaVerify');
+            btn.disabled = true;
+            btn.textContent = '⏳ 验证中...';
+
+            try {
+                const resp = await fetch(`${API}/verify_sigma`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        vrf_public_key_raw: state.vrfPublicKeyRaw,
+                        sigma_pk: state.sigmaPk,
+                        pki_public_key: state.pkiPublicKey
+                    })
+                });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+
+                state.sigmaVerified = data.sigma_valid;
+                const badge = document.getElementById('sigmaVerifyBadge');
+                if (data.sigma_valid) {
+                    badge.innerHTML = '<span class="status-dot ok"></span> 验证通过 ✅';
+                    badge.className = 'status-badge status-ok';
+                    showToast('✅ σ_pk验证通过！VRF公钥可信', 'success');
+                } else {
+                    badge.innerHTML = '<span class="status-dot error"></span> 验证失败 ❌';
+                    badge.className = 'status-badge status-error';
+                    showToast('❌ σ_pk验证失败！公钥可能被篡改', 'error');
+                }
+                btn.textContent = data.sigma_valid ? '✅ 通过' : '❌ 失败';
+            } catch (err) {
+                showToast('❌ ' + err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = '🏛️ σpk 求证';
+            }
+        }
+
+        // ──────────────────────────────────────
+        // 验证2：服务正确性验证（等级匹配检查）
+        // ──────────────────────────────────────
+        function doServiceCheck() {
+            if (!state.lastOutputY || !state.lastGrade) {
+                showToast('缺少抽取结果，请先完成抽取', 'error'); return;
+            }
+
+            const btn = document.getElementById('btnServiceCheck');
+            btn.disabled = true;
+            btn.textContent = '⏳ 检查中...';
+
+            // 本地计算：从y值重新计算等级
+            const recomputedGrade = getGradeFromY(state.lastOutputY);
+            const gradeMatches = (recomputedGrade === state.lastGrade);
+
+            state.serviceChecked = true;
+            const badge = document.getElementById('serviceCheckBadge');
+
+            if (gradeMatches) {
+                badge.innerHTML = '<span class="status-dot ok"></span> 一致 ✅';
+                badge.className = 'status-badge status-ok';
+                showToast(`✅ 服务正确！等级${state.lastGrade}与y值匹配`, 'success');
+
+                // 在结果区追加详细信息
+                const val = parseInt(state.lastOutputY.substring(0, 4), 16);
+                document.getElementById('userResult').innerHTML += `
+                        <div class="verify-divider"></div>
+                        <div style="font-size:0.75rem;color:#059669;font-weight:600;">
+                            ✅ 服务正确性检查通过<br>
+                            y前4位: 0x${state.lastOutputY.substring(0, 4)} = ${val}<br>
+                            计算等级: ${recomputedGrade}，服务商声称: ${state.lastGrade} → 一致
+                        </div>
+                    `;
+            } else {
+                badge.innerHTML = '<span class="status-dot error"></span> 不一致 ❌';
+                badge.className = 'status-badge status-error';
+                showToast('❌ 服务异常！等级与y值不匹配', 'error');
+
+                const val = parseInt(state.lastOutputY.substring(0, 4), 16);
+                document.getElementById('userResult').innerHTML += `
+                        <div class="verify-divider"></div>
+                        <div style="font-size:0.75rem;color:#DC2626;font-weight:600;">
+                            ❌ 服务正确性检查失败<br>
+                            y前4位: 0x${state.lastOutputY.substring(0, 4)} = ${val}<br>
+                            计算等级: ${recomputedGrade}，服务商声称: ${state.lastGrade} → 不匹配！
+                        </div>
+                    `;
+            }
+            btn.textContent = gradeMatches ? '✅ 通过' : '❌ 失败';
+        }
+
+        // ──────────────────────────────────────
+        // 验证3：完整VRF验证
+        // ──────────────────────────────────────
+        async function doVerify() {
+            if (!state.lastProofPi || !state.lastOutputY) {
+                showToast('请先完成质疑获取证明', 'error'); return;
+            }
+
+            const btn = document.getElementById('btnVerify');
+            btn.disabled = true;
+            btn.textContent = '⏳ 验证中...';
+
+            try {
+                const resp = await fetch(`${API}/verify`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        input_x: state.lastInputX,
+                        y: state.lastOutputY,
+                        pi: state.lastProofPi,
+                        vrf_public_key_raw: state.vrfPublicKeyRaw,
+                        sigma_pk: state.sigmaPk,
+                        pki_public_key: state.pkiPublicKey
+                    })
+                });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                if (!data.success) throw new Error(data.error);
+
+                state.vrfVerified = (data.vrf_valid && data.y_match);
+                const allPassed = data.vrf_valid && data.sigma_valid && data.y_match;
+
+                const badge = document.getElementById('userVerifyBadge');
+                if (allPassed) {
+                    badge.innerHTML = '<span class="status-dot ok"></span> 通过 ✅';
+                    badge.className = 'status-badge status-ok';
+                } else {
+                    badge.innerHTML = '<span class="status-dot error"></span> 失败 ❌';
+                    badge.className = 'status-badge status-error';
+                }
+
+                let resultHtml = `
+                        <div class="verify-divider"></div>
+                        <span class="label">🔐 完整VRF验证结果</span>
+                        <div style="font-size:0.78rem;margin-top:4px;">
+                            <span style="color:${data.vrf_valid ? '#059669' : '#DC2626'};">${data.vrf_valid ? '✅' : '❌'} VRF证明: ${data.vrf_valid ? '有效' : '无效'}</span><br>
+                            <span style="color:${data.sigma_valid ? '#059669' : '#DC2626'};">${data.sigma_valid ? '✅' : '❌'} σ<sub>pk</sub>: ${data.sigma_valid ? '可信' : '不可信'}</span><br>
+                            <span style="color:${data.y_match ? '#059669' : '#DC2626'};">${data.y_match ? '✅' : '❌'} y一致性: ${data.y_match ? '匹配' : '不匹配'}</span>
+                        </div>
+                        ${allPassed
+                        ? '<div style="margin-top:6px;padding:8px;background:#ECFDF5;border-radius:6px;color:#059669;font-weight:700;">✅ 全部通过！结果公平可信</div>'
+                        : '<div style="margin-top:6px;padding:8px;background:#FEF2F2;border-radius:6px;color:#DC2626;font-weight:700;">❌ 验证未完全通过</div>'}
+                    `;
+                document.getElementById('userResult').innerHTML += resultHtml;
+
+                updateSteps(4);
+                updateButtons();
+                btn.textContent = allPassed ? '✅ 通过' : '⚠️ 失败';
+                showToast(allPassed ? '✅ 全部验证通过！' : '❌ 验证未通过', allPassed ? 'success' : 'error');
+            } catch (err) {
+                showToast('❌ ' + err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = '🔐 重试';
+            }
+        }
+
+        // ──────────────────────────────────────
+        // 页面初始化
+        // ──────────────────────────────────────
+        function initPage() {
+            updateSteps(0);
+            updateButtons();
+            document.getElementById('btnRequest').disabled = true;
+            document.getElementById('btnChallenge').disabled = true;
+            document.getElementById('btnSigmaVerify').disabled = true;
+            document.getElementById('btnServiceCheck').disabled = true;
+            document.getElementById('btnVerify').disabled = true;
+            console.log('✅ EC-VRF演示就绪，请先初始化PKI');
+        }
+
+        document.addEventListener('DOMContentLoaded', initPage);
+    </script>
+</body>
+</html>

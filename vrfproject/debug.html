@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VRF API调试工具</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .debug-panel {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 6px;
+            background: #4A6CF7;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover { background: #3B4FB8; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        pre {
+            background: #f4f4f4;
+            padding: 12px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .success { color: #059669; font-weight: bold; }
+        .error { color: #DC2626; font-weight: bold; }
+        .info { color: #4A6CF7; }
+        .status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        .status-dot.online { background: #10B981; }
+        .status-dot.offline { background: #EF4444; }
+    </style>
+</head>
+<body>
+    <h1>🔍 VRF API 调试工具</h1>
+    
+    <!-- 连接状态 -->
+    <div class="debug-panel">
+        <h3>📡 服务器连接状态</h3>
+        <div id="connectionStatus">
+            <span class="status-dot offline"></span> 未检测
+        </div>
+        <div style="margin-top:10px;">
+            <label>API地址：</label>
+            <input type="text" id="apiUrl" value="http://127.0.0.1:5000/api" style="width:300px;padding:6px;">
+            <button onclick="testConnection()">🔄 测试连接</button>
+        </div>
+    </div>
+
+    <!-- 步骤1：初始化 -->
+    <div class="debug-panel">
+        <h3>步骤1：PKI初始化</h3>
+        <button onclick="testInit()" id="btnInit">🔑 调用 /api/init</button>
+        <pre id="initResult">等待调用...</pre>
+    </div>
+
+    <!-- 步骤2：抽取 -->
+    <div class="debug-panel">
+        <h3>步骤2：VRF抽取</h3>
+        <label>输入x：</label>
+        <input type="text" id="inputX" value="alice@example.com||42" style="width:300px;padding:6px;">
+        <button onclick="testEvaluate()" id="btnEvaluate" disabled>🎲 调用 /api/evaluate</button>
+        <pre id="evaluateResult">等待调用...</pre>
+    </div>
+
+    <!-- 步骤3：质疑 -->
+    <div class="debug-panel">
+        <h3>步骤3：质疑获取证明</h3>
+        <button onclick="testChallenge()" id="btnChallenge" disabled>📜 调用 /api/challenge</button>
+        <pre id="challengeResult">等待调用...</pre>
+    </div>
+
+    <!-- 步骤4：验证 -->
+    <div class="debug-panel">
+        <h3>步骤4：验证</h3>
+        <button onclick="testVerify()" id="btnVerify" disabled>🔍 调用 /api/verify</button>
+        <pre id="verifyResult">等待调用...</pre>
+    </div>
+
+    <!-- 日志 -->
+    <div class="debug-panel">
+        <h3>📋 操作日志</h3>
+        <pre id="logOutput" style="max-height:200px;"></pre>
+    </div>
+
+    <script>
+        // 全局状态
+        let API = 'http://127.0.0.1:5000/api';
+        let testState = {
+            lastY: null,
+            lastPi: null,
+            lastInputX: null,
+            pkiPublicKey: null,
+            sigmaPk: null,
+            vrfPublicKeyRaw: null,
+            proofId: null,
+            sessionInitialized: false
+        };
+
+        // 日志函数
+        function log(msg, type = 'info') {
+            const logEl = document.getElementById('logOutput');
+            const timestamp = new Date().toLocaleTimeString();
+            const prefix = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
+            logEl.innerHTML += `[${timestamp}] ${prefix} ${msg}\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        // 更新连接状态
+        function updateConnectionStatus(online) {
+            const statusEl = document.getElementById('connectionStatus');
+            if (online) {
+                statusEl.innerHTML = '<span class="status-dot online"></span> <span class="success">✅ 服务器在线</span>';
+            } else {
+                statusEl.innerHTML = '<span class="status-dot offline"></span> <span class="error">❌ 服务器离线</span>';
+            }
+        }
+
+        // 测试连接
+        async function testConnection() {
+            const apiUrl = document.getElementById('apiUrl').value;
+            API = apiUrl;
+            
+            log('正在测试连接: ' + API + '/status');
+            
+            try {
+                const resp = await fetch(API + '/status');
+                const data = await resp.json();
+                updateConnectionStatus(true);
+                log('连接成功！状态: ' + JSON.stringify(data), 'success');
+                
+                // 更新按钮状态
+                document.getElementById('btnInit').disabled = false;
+                
+                return data;
+            } catch (err) {
+                updateConnectionStatus(false);
+                log('连接失败: ' + err.message, 'error');
+                document.getElementById('btnInit').disabled = true;
+                throw err;
+            }
+        }
+
+        // 步骤1：初始化
+        async function testInit() {
+            const btn = document.getElementById('btnInit');
+            btn.disabled = true;
+            btn.textContent = '⏳ 初始化中...';
+            
+            document.getElementById('initResult').textContent = '正在调用 POST /api/init ...';
+            log('开始PKI初始化...');
+            
+            try {
+                const resp = await fetch(API + '/init', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                log('收到响应，状态码: ' + resp.status);
+                
+                // 先获取原始文本
+                const rawText = await resp.text();
+                log('响应内容长度: ' + rawText.length + ' 字节');
+                
+                // 尝试解析JSON
+                let data;
+                try {
+                    data = JSON.parse(rawText);
+                } catch (parseErr) {
+                    document.getElementById('initResult').textContent = '❌ JSON解析失败\n\n原始响应（前500字符）:\n' + rawText.substring(0, 500);
+                    log('JSON解析失败: ' + parseErr.message, 'error');
+                    throw new Error('JSON解析失败：' + parseErr.message);
+                }
+                
+                document.getElementById('initResult').textContent = JSON.stringify(data, null, 2);
+                
+                if (data.success) {
+                    log('✅ 初始化成功！', 'success');
+                    log('VRF公钥长度: ' + (data.vrf_public_key_raw?.length || 0));
+                    log('σ_pk长度: ' + (data.sigma_pk?.length || 0));
+                    
+                    // 保存状态
+                    testState.vrfPublicKeyRaw = data.vrf_public_key_raw;
+                    testState.sigmaPk = data.sigma_pk;
+                    testState.pkiPublicKey = data.pki_public_key;
+                    testState.sessionInitialized = true;
+                    
+                    // 启用下一步
+                    document.getElementById('btnEvaluate').disabled = false;
+                    document.getElementById('btnChallenge').disabled = true;
+                    document.getElementById('btnVerify').disabled = true;
+                    
+                    btn.textContent = '✅ 初始化成功';
+                } else {
+                    log('❌ 初始化失败: ' + data.error, 'error');
+                    btn.textContent = '🔑 重试初始化';
+                    btn.disabled = false;
+                }
+            } catch (err) {
+                document.getElementById('initResult').textContent = '❌ 请求失败: ' + err.message;
+                log('请求失败: ' + err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = '🔑 重试初始化';
+            }
+        }
+
+        // 步骤2：抽取
+        // 修改 testEvaluate 函数
+        async function testEvaluate() {
+            const inputX = document.getElementById('inputX').value.trim();
+            if (!inputX) {
+                log('请输入x', 'error');
+                return;
+            }
+            testState.lastInputX = inputX;
+
+            const btn = document.getElementById('btnEvaluate');
+            btn.disabled = true;
+            btn.textContent = '⏳ 计算中...';
+
+            try {
+                const resp = await fetch(API + '/evaluate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ input_x: inputX })
+                });
+
+                const data = await resp.json();
+                document.getElementById('evaluateResult').textContent = JSON.stringify(data, null, 2);
+
+                if (data.success) {
+                    log('✅ VRF计算成功！', 'success');
+                    testState.lastY = data.y;
+                    testState.lastPi = data.pi;
+                    testState.proofId = data.proof_id;  // 保存proof_id
+                    log('保存proof_id: ' + data.proof_id);
+
+                    document.getElementById('btnChallenge').disabled = false;
+                    btn.textContent = '✅ 计算成功';
+                } else {
+                    log('❌ VRF计算失败: ' + data.error, 'error');
+                    btn.disabled = false;
+                    btn.textContent = '🎲 重试抽取';
+                }
+            } catch (err) {
+                document.getElementById('evaluateResult').textContent = '❌ ' + err.message;
+                log('请求失败: ' + err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = '🎲 重试抽取';
+            }
+        }
+
+        // 修改 testChallenge 函数
+        async function testChallenge() {
+            if (!testState.lastY || !testState.lastInputX || !testState.proofId) {
+                log('请先完成抽取（步骤2），确保有proof_id', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('btnChallenge');
+            btn.disabled = true;
+            btn.textContent = '⏳ 获取证明...';
+
+            try {
+                log('请求challenge，proof_id: ' + testState.proofId);
+
+                const resp = await fetch(API + '/challenge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        proof_id: testState.proofId,  // 传递proof_id
+                        input_x: testState.lastInputX,
+                        y: testState.lastY
+                    })
+                });
+
+                const data = await resp.json();
+                document.getElementById('challengeResult').textContent = JSON.stringify(data, null, 2);
+
+                if (data.success) {
+                    log('✅ 证明获取成功！', 'success');
+                    testState.lastPi = data.pi;
+                    testState.sigmaPk = data.sigma_pk;
+                    testState.vrfPublicKeyRaw = data.vrf_public_key_raw;
+                    testState.pkiPublicKey = data.pki_public_key;
+
+                    document.getElementById('btnVerify').disabled = false;
+                    btn.textContent = '✅ 证明已获取';
+                } else {
+                    log('❌ 获取证明失败: ' + data.error, 'error');
+                    btn.disabled = false;
+                    btn.textContent = '📜 重试获取';
+                }
+            } catch (err) {
+                document.getElementById('challengeResult').textContent = '❌ ' + err.message;
+                log('请求失败: ' + err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = '📜 重试获取';
+            }
+        }
+
+        // 步骤3：质疑
+        async function testChallenge() {
+            console.log('🔍 开始质疑，当前状态:', {
+                lastY: testState.lastY,
+                lastInputX: testState.lastInputX,
+                proofId: testState.proofId,
+                hasProofId: !!testState.proofId
+            });
+
+            if (!testState.lastY || !testState.lastInputX) {
+                log('请先完成抽取（步骤2）', 'error');
+                return;
+            }
+
+            // 如果没有proofId，尝试只用x和y
+            const requestBody = {
+                input_x: testState.lastInputX,
+                y: testState.lastY
+            };
+
+            // 如果有proofId就加上
+            if (testState.proofId) {
+                requestBody.proof_id = testState.proofId;
+            }
+
+            console.log('📤 发送请求体:', requestBody);
+
+            const btn = document.getElementById('btnChallenge');
+            btn.disabled = true;
+            btn.textContent = '⏳ 获取证明...';
+
+            try {
+                const resp = await fetch(API + '/challenge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+
+                console.log('📥 响应状态:', resp.status);
+                const data = await resp.json();
+                console.log('📥 响应数据:', data);
+
+                document.getElementById('challengeResult').textContent = JSON.stringify(data, null, 2);
+
+                if (data.success) {
+                    log('✅ 证明获取成功！', 'success');
+                    testState.lastPi = data.pi;
+                    testState.sigmaPk = data.sigma_pk;
+                    testState.vrfPublicKeyRaw = data.vrf_public_key_raw;
+                    testState.pkiPublicKey = data.pki_public_key;
+                    testState.proofId = data.proof_id; // 更新proof_id
+
+                    document.getElementById('btnVerify').disabled = false;
+                    btn.textContent = '✅ 证明已获取';
+                } else {
+                    log('❌ 获取证明失败: ' + (data.error || '未知错误'), 'error');
+                    btn.disabled = false;
+                    btn.textContent = '📜 重试获取';
+                }
+            } catch (err) {
+                console.error('❌ 请求异常:', err);
+                document.getElementById('challengeResult').textContent = '❌ ' + err.message;
+                log('请求失败: ' + err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = '📜 重试获取';
+            }
+        }
+
+        // 步骤4：验证
+        async function testVerify() {
+            if (!testState.lastPi || !testState.lastY || !testState.lastInputX) {
+                log('请先完成质疑（步骤3）', 'error');
+                return;
+            }
+            
+            const btn = document.getElementById('btnVerify');
+            btn.disabled = true;
+            btn.textContent = '⏳ 验证中...';
+            
+            try {
+                const resp = await fetch(API + '/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        input_x: testState.lastInputX,
+                        y: testState.lastY,
+                        pi: testState.lastPi,
+                        vrf_public_key_raw: testState.vrfPublicKeyRaw,
+                        sigma_pk: testState.sigmaPk,
+                        pki_public_key: testState.pkiPublicKey
+                    })
+                });
+                
+                const data = await resp.json();
+                document.getElementById('verifyResult').textContent = JSON.stringify(data, null, 2);
+                
+                if (data.success) {
+                    const allPassed = data.vrf_valid && data.sigma_valid && data.y_match;
+                    if (allPassed) {
+                        log('✅ 全部验证通过！VRF公平可信', 'success');
+                    } else {
+                        log('⚠️ 验证未完全通过', 'error');
+                    }
+                    btn.textContent = allPassed ? '✅ 验证通过' : '⚠️ 验证失败';
+                } else {
+                    log('❌ 验证失败: ' + data.error, 'error');
+                    btn.textContent = '🔍 重试验证';
+                    btn.disabled = false;
+                }
+            } catch (err) {
+                document.getElementById('verifyResult').textContent = '❌ ' + err.message;
+                log('请求失败: ' + err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = '🔍 重试验证';
+            }
+        }
+
+        // 页面加载时自动测试连接
+        window.onload = async function() {
+            log('🔍 VRF API调试工具已启动');
+            log('API地址: ' + API);
+            
+            try {
+                await testConnection();
+                log('可以开始调试了！请点击"调用 /api/init"按钮开始');
+            } catch (err) {
+                log('⚠️ 自动连接失败，请检查后端是否启动', 'error');
+            }
+        };
+    </script>
+</body>
+</html>
